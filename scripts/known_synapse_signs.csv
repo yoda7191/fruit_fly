@@ -1,0 +1,3 @@
+pre_type,post_type,sign,source
+MBON01,PAM01,1,"MBON-gamma5beta'2a excites PAM-gamma5 despite being glutamatergic: Zhao et al. 2018 (imaging), Otto et al. 2020 (direct synaptic excitation); the feedback that forms extinction memory (Felsenberg et al. 2018)"
+MBON11,PPL101,0,"MBON-gamma1pedc -> PPL1-gamma1pedc acts through GABA-B receptors (Pavlowsky et al. 2018): slow, metabotropic modulation, not fast inhibition; modelled as no fast effect. As a fast synapse it vetoed the shock response of PPL1-gamma1pedc (1 spike in 1 s at 40 Hz input)"

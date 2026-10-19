@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>fruit_fly · fly olfactory learning</title>
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>fruit_fly</h1>
+      <span class="subtitle">olfactory conditioning in the fruit fly mushroom body</span>
+      <p id="circuit-info" class="muted"></p>
+      <label id="api-key-label" class="api-key" hidden>API key
+        <input id="api-key" type="password" autocomplete="off" spellcheck="false" placeholder="ff_…" />
+      </label>
+    </header>
+    <div id="banner" class="banner" hidden></div>
+
+    <main class="layout">
+      <aside class="panel left">
+        <form id="experiment-form" novalidate>
+          <section class="step">
+            <h2><span class="step-n">1</span> Choose two odours</h2>
+            <p class="step-hint">The fly learns to tell them apart: one is paired with a shock or a
+              sugar reward, the other isn't.</p>
+            <div id="odour-pairs" class="chips" aria-label="ready-made odour pairs"></div>
+            <div class="field">
+              <label class="field-label" for="cs-plus"><span class="term" tabindex="0" data-tip="The conditioned stimulus that is paired with the shock or reward (CS = conditioned stimulus).">CS+</span>
+                <span class="hint">paired with the shock or reward</span></label>
+              <input id="cs-plus" value="3-octanol" autocomplete="off" spellcheck="false" />
+            </div>
+            <div class="field">
+              <label class="field-label" for="cs-minus"><span class="term" tabindex="0" data-tip="The control odour: presented the same number of times, but never with the shock or reward.">CS&minus;</span>
+                <span class="hint">presented alone</span></label>
+              <input id="cs-minus" value="4-methylcyclohexanol" autocomplete="off" spellcheck="false" />
+            </div>
+            <p id="odour-similarity" class="similarity muted small" aria-live="polite"></p>
+            <div id="cs-c-label" class="field" hidden>
+              <label class="field-label" for="cs-c">Odour C <span class="hint">a third odour this protocol uses</span></label>
+              <input id="cs-c" value="pentyl acetate" autocomplete="off" spellcheck="false" />
+            </div>
+          </section>
+
+          <section class="step">
+            <h2><span class="step-n">2</span> Train</h2>
+            <p class="step-hint">How the odours are presented, and what the fly gets with the CS+.</p>
+            <div class="row two">
+              <label><span class="term" tabindex="0" data-tip="Unconditioned stimulus: the shock (punishment) or sugar (reward) the fly learns to predict. Shock activates the PPL1 dopamine neurons, sugar the PAM dopamine neurons.">US</span>
+                <select id="us">
+                  <option value="shock">electric shock</option>
+                  <option value="reward">sugar reward</option>
+                </select>
+              </label>
+              <label><span class="term" tabindex="0" data-tip="How many times the CS+ (with the US) and the CS&minus; (alone) are presented. 0 = no training: a control.">Trials</span>
+                <input id="trials" type="number" min="0" max="20" step="1" value="3" />
+              </label>
+            </div>
+            <label><span class="term" tabindex="0" data-tip="The order of presentations. Besides plain conditioning, presets reproduce classic experiments: extinction, second-order conditioning, blocking and others.">Protocol</span>
+              <select id="protocol"></select></label>
+            <div id="protocol-info" class="protocol-info"></div>
+          </section>
+
+          <section class="step">
+            <h2><span class="step-n">3</span> Manipulate <span class="optional">optional</span></h2>
+            <p class="step-hint">Change the brain to see which part learning needs, as in genetic
+              experiments.</p>
+            <div class="field">
+              <span class="field-label"><span class="term" tabindex="0" data-tip="Silenced neurons never fire, as when flies express a blocker such as Kir2.1 or shibire in those cells.">Silence neurons</span></span>
+              <div id="lesions" class="lesions"></div>
+            </div>
+            <label><span class="term" tabindex="0" data-tip="APL is one large inhibitory neuron that keeps only ~5-10% of Kenyon cells active for each odour. Less inhibition: more Kenyon cells respond, and odours overlap more.">APL inhibition</span>
+              <output id="apl-gain-value"></output>
+              <input id="apl-gain" type="range" min="0" max="0.2" step="0.001" value="0.05" />
+            </label>
+          </section>
+
+          <details class="advanced">
+            <summary>Advanced settings</summary>
+            <label>Odour data
+              <select id="odour-source">
+                <option value="door">real odours (DoOR receptor recordings)</option>
+                <option value="random">random patterns</option>
+              </select>
+            </label>
+            <label><span class="term" tabindex="0" data-tip="Starts the random number generator: the same seed and settings give exactly the same result.">Seed</span>
+              <input id="seed" type="number" min="0" step="1" value="1" />
+            </label>
+            <details class="protocol-json">
+              <summary>Edit protocol steps (JSON)</summary>
+              <textarea id="protocol-json" rows="9" spellcheck="false" aria-label="protocol steps as JSON"></textarea>
+              <p class="muted small">Odours are slots: A = CS+, B = CS&minus;, C = odour C. <code>us_onset_ms</code>
+                is relative to the odour; negative puts the US first. The readout compares the first
+                US-free presentations of <code>plus</code> and <code>minus</code> in phases
+                <code>before</code> and <code>after</code>.</p>
+            </details>
+          </details>
+
+          <div class="button-row">
+            <button id="run-button" type="submit">Run experiment</button>
+            <button id="cancel-button" class="secondary" type="button" hidden>Cancel</button>
+          </div>
+          <p id="form-status" class="status"></p>
+          <label class="muted small">Previous experiments
+            <select id="history" aria-label="previous experiments"></select>
+          </label>
+        </form>
+
+        <details class="sweep">
+          <summary>Parameter sweep</summary>
+          <p class="hint">
+            Repeats the experiment above for several values of one parameter, each with
+            different random seeds, and plots the average with its spread.
+          </p>
+          <label>Parameter <select id="sweep-parameter"></select></label>
+          <label>Values <span class="hint">comma-separated; lesion scan: none, group:&lt;group&gt;, type:&lt;cell type&gt;</span>
+            <input id="sweep-values" spellcheck="false" autocomplete="off" />
+          </label>
+          <label>Seeds per value
+            <input id="sweep-repeats" type="number" min="1" max="10" step="1" value="3" />
+          </label>
+          <div class="button-row">
+            <button id="sweep-button" type="button">Run sweep</button>
+            <button id="sweep-cancel" class="secondary" type="button" hidden>Cancel sweep</button>
+          </div>
+          <p id="sweep-status" class="status"></p>
+          <select id="sweep-history" aria-label="previous sweeps"></select>
+        </details>
+
+        <h2>In the 3D view</h2>
+        <p class="step-hint">Tick to show a group; click its name to see what it connects to.</p>
+        <div id="legend"></div>
+        <div id="display-options" class="display-options"></div>
+      </aside>
+
+      <section class="center">
+        <div id="viewer">
+          <button id="reset-view" class="overlay" type="button">Reset view</button>
+          <p class="overlay hint-3d">drag to rotate · scroll to zoom · right-drag to pan · click a neuron to see its connections · space to play/pause</p>
+          <p id="viewer-status" class="overlay viewer-status" hidden></p>
+          <aside id="neuron-panel" class="neuron-panel" hidden aria-live="polite"></aside>
+        </div>
+        <div id="timeline"></div>
+      </section>
+
+      <aside class="panel right">
+        <div id="results">
+          <h2>Result</h2>
+          <p class="muted">
+            Choose two odours on the left and run an experiment. The fly smells the CS+ together
+            with a shock (or sugar reward), and the CS&minus; alone. Afterwards both odours are
+            tested again: if the fly learned, its output neurons answer the CS+ less.
+          </p>
+          <p class="muted">
+            The 3D view replays every spike: neurons flash white when they fire. Watch the sparse
+            Kenyon cell pattern for each odour, and the dopamine neurons during the US. Click any
+            neuron to see what it connects to.
+          </p>
+        </div>
+      </aside>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,19 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "pybind11>=2.12"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "fruit-fly"
+version = "0.1.0"
+description = "Connectome-constrained mushroom body simulator (C++ core)"
+requires-python = ">=3.10"
+dependencies = ["numpy", "pandas"]
+
+[tool.scikit-build]
+build-dir = "build/{wheel_tag}"
+wheel.packages = ["fruit_fly"]
+
+[tool.scikit-build.cmake.define]
+FRUIT_FLY_BUILD_PYTHON = "ON"
+FRUIT_FLY_BUILD_CLI = "OFF"
+FRUIT_FLY_BUILD_TESTS = "OFF"

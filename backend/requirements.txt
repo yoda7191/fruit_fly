@@ -1,0 +1,14 @@
+# Runtime dependencies of the backend.
+# The fruit_fly package itself comes from the repository root: `pip install -e .`
+# For running the tests as well: `pip install -r backend/requirements-dev.txt`
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+numpy>=1.24
+sqlalchemy>=2.0
+psycopg[binary]>=3.1     # PostgreSQL driver (FRUIT_FLY_DATABASE_URL=postgresql+psycopg://...)
+rq>=1.16                 # Redis queue (FRUIT_FLY_QUEUE=redis)
+redis>=5
+alembic>=1.13            # schema migrations (backend/migrations)
+prometheus-client>=0.20  # /metrics
+boto3>=1.34              # spike recordings in S3 / MinIO (FRUIT_FLY_SPIKE_STORE=s3)

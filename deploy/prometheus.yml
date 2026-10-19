@@ -1,0 +1,11 @@
+# Prometheus for `docker compose --profile monitoring up`: scrapes the API's /metrics.
+# Useful alerts: fruit_fly_oldest_queued_seconds > 300 (queue backed up),
+# rate(fruit_fly_requests_refused_total[5m]) by reason, and p95 of
+# fruit_fly_http_request_duration_seconds per route.
+global:
+  scrape_interval: 15s
+scrape_configs:
+  - job_name: fruit_fly_api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]

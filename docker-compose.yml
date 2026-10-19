@@ -1,0 +1,117 @@
+# Full stack:  docker compose up --build   ->  http://localhost:8000
+#
+#   postgres  experiment and sweep records
+#   redis     job queue
+#   api       web app + API (submits jobs, serves results)
+#   worker    runs simulations; scale with:  docker compose up --scale worker=4
+#
+# Change POSTGRES_PASSWORD (e.g. in a .env file) before exposing this anywhere.
+
+x-fruit-fly-env: &fruit-fly-env
+  FRUIT_FLY_QUEUE: redis
+  FRUIT_FLY_REDIS_URL: redis://redis:6379/0
+  FRUIT_FLY_DATABASE_URL: postgresql+psycopg://fruit_fly:${POSTGRES_PASSWORD:-fruit_fly}@postgres:5432/fruit_fly
+  FRUIT_FLY_STORAGE_DIR: /var/lib/fruit_fly/runs
+  FRUIT_FLY_MAX_PENDING: "200"
+  # Real FlyWire circuit: extract it on the host (scripts/extract_mb_circuit.py),
+  # then uncomment this line and the ./data volume in both services.
+  # FRUIT_FLY_CIRCUIT_DIR: /data/processed
+  # FRUIT_FLY_PARAMS_FILE: /data/calibration-flywire.json   # python -m fruit_fly.validation ... --params-out
+  # Before exposing the API: require keys (docker compose exec api python -m backend.app.apikeys create NAME)
+  # FRUIT_FLY_REQUIRE_API_KEY: "1"
+  FRUIT_FLY_RATE_LIMIT: "60"
+  # Spike recordings in S3 instead of the shared `runs` volume (`--profile s3` starts a local
+  # S3-compatible server; create the bucket first, see deployment.md):
+  # FRUIT_FLY_SPIKE_STORE: s3
+  # FRUIT_FLY_S3_BUCKET: fruit-fly-spikes
+  # FRUIT_FLY_S3_ENDPOINT: http://s3:8333
+  # AWS_ACCESS_KEY_ID: fruit_fly
+  # AWS_SECRET_ACCESS_KEY: ${S3_SECRET:-change-me}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: fruit_fly
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fruit_fly}
+      POSTGRES_DB: fruit_fly
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fruit_fly -d fruit_fly"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]   # queued jobs survive a Redis restart
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    build: .
+    image: fruit_fly:latest
+    ports:
+      - "8000:8000"
+    environment: *fruit-fly-env
+    volumes:
+      - runs:/var/lib/fruit_fly          # spike files: written by workers, read by the API
+      # - ./data:/data:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+
+  worker:
+    build: .                                  # same image as api (cached, so no second build)
+    image: fruit_fly:latest
+    command: ["python", "-m", "backend.app.worker"]
+    environment: *fruit-fly-env
+    volumes:
+      - runs:/var/lib/fruit_fly
+      # - ./data:/data:ro
+    depends_on:
+      api: { condition: service_started }     # the api service builds the image and creates the tables
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      disable: true                           # no HTTP server in a worker
+    deploy:
+      replicas: 2
+    restart: unless-stopped
+
+  # Optional: `docker compose --profile s3 up`, an S3-compatible store for spike recordings.
+  # (MinIO's images are no longer publicly pullable; SeaweedFS speaks the same S3 API.)
+  s3:
+    image: chrislusf/seaweedfs:3.80
+    profiles: ["s3"]
+    command: ["server", "-s3", "-dir=/data"]
+    volumes:
+      - s3data:/data
+    restart: unless-stopped
+
+  # Optional: `docker compose --profile monitoring up` -> http://localhost:9090
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    profiles: ["monitoring"]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      api: { condition: service_started }
+    restart: unless-stopped
+
+volumes:
+  s3data:
+  pgdata:
+  redisdata:
+  runs:

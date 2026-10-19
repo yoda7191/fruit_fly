@@ -1,0 +1,9 @@
+{
+  "kc_dan": "terminal",
+  "kc_dan_gain": 0.0,
+  "apl_plasticity": true,
+  "graded_input_gain": 0.08649912588824143,
+  "graded_gain": 0.009765625,
+  "mbon_tonic_mV": 7.31689453125,
+  "learning_rate": 1.5891755512143327e-06
+}
