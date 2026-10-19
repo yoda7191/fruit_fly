@@ -20,7 +20,11 @@ replays every recorded spike at full resolution.
 
 ## Live application
 
-Here will be a link to the live application
+The real FlyWire circuit is available at
+[fruit-fly.duckdns.org](https://fruit-fly.duckdns.org).
+
+The demo is shared: users access the same FlyWire circuit and server, while
+each browser maintains its own viewer state. 
 
 ## What this project contains
 
@@ -219,7 +223,7 @@ flowchart LR
   SIM --> S[Spike files: disk or S3]
 ```
 
-The default Docker and Hugging Face modes use SQLite and in-process threads.
+The default Docker mode uses SQLite and in-process threads.
 The compose deployment uses PostgreSQL, Redis, and separate workers. Jobs are
 claimed atomically, migrations are protected against concurrent startup, live
 progress is streamed with SSE (with polling fallback), and deterministic
