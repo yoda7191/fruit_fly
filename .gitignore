@@ -75,3 +75,5 @@ temp/
 paper.md
 # generated data (scripts/download_*.sh, make_synthetic_mb.py, extract_mb_circuit.py)
 data/
+
+.DS_STORE
