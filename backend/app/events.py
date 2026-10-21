@@ -166,23 +166,32 @@ async def stream_changes(request, bus: EventBus, id_: str, read, *,
     """
     from starlette.concurrency import run_in_threadpool
 
-    async with bus.subscribe(id_) as sub:
-        last = None
-        while True:
-            state = await run_in_threadpool(read)
-            if state is None:
-                yield sse("gone", "{}")
-                return
-            data, finished = state
-            if data != last:
-                yield sse("update", data)
-                last = data
-            if finished:
-                yield sse("end", "{}")
-                return
-            if not await sub.wait(KEEPALIVE_S):
-                if await request.is_disconnected():
+    metrics = getattr(getattr(request, "app", None), "state", None)
+    metrics_obj = getattr(metrics, "metrics", None) if metrics else None
+    if metrics_obj and hasattr(metrics_obj, "sse_connections"):
+        metrics_obj.sse_connections.inc()
+
+    try:
+        async with bus.subscribe(id_) as sub:
+            last = None
+            while True:
+                state = await run_in_threadpool(read)
+                if state is None:
+                    yield sse("gone", "{}")
                     return
-                yield ": keepalive\n\n"          # comment line: keeps proxies from closing the stream
-            elif min_interval_s:
-                await asyncio.sleep(min_interval_s)   # coalesce bursts (a sweep's many members)
+                data, finished = state
+                if data != last:
+                    yield sse("update", data)
+                    last = data
+                if finished:
+                    yield sse("end", "{}")
+                    return
+                if not await sub.wait(KEEPALIVE_S):
+                    if await request.is_disconnected():
+                        return
+                    yield ": keepalive\n\n"          # comment line: keeps proxies from closing the stream
+                elif min_interval_s:
+                    await asyncio.sleep(min_interval_s)   # coalesce bursts (a sweep's many members)
+    finally:
+        if metrics_obj and hasattr(metrics_obj, "sse_connections"):
+            metrics_obj.sse_connections.dec()

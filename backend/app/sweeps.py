@@ -24,6 +24,10 @@ METRICS: dict[str, tuple[str, ...]] = {
     "kc_active_plus": ("separation", "kc_active_plus"),
     "kc_correlation": ("separation", "kc_correlation"),
     "pn_correlation": ("separation", "pn_correlation"),
+    "mean_weight_ratio": ("mean_weight_ratio",),
+    "mbon_discrimination": ("population_stats", "mbon_discrimination"),
+    "learned_drive": ("behavior", "learned_drive"),
+    "weight_floor_frac": ("weight_stats", "floor_fraction"),
 }
 
 

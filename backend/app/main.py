@@ -46,7 +46,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Load once; every request shares these read-only objects.
         store = ModelStore(settings)
         in_process = settings.queue == "thread"
-        jobs, engine = create_job_service(settings, store if in_process else None)
+        jobs, engine = create_job_service(settings, store if in_process else None, metrics=metrics)
         queue: JobQueue = (ThreadQueue(jobs.execute, settings.max_workers) if in_process
                            else RedisQueue(settings.redis_url, settings.job_timeout_s))
         jobs.queue = queue
@@ -68,7 +68,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.engine = engine
         app.state.sessions = make_sessionmaker(engine)
         app.state.rate_limiter = make_rate_limiter(settings.rate_limit, settings.queue, settings.redis_url)
-        metrics.watch_database(app.state.sessions)
+        metrics.watch_database(app.state.sessions, storage_dir=settings.runs_dir)
         yield
         queue.shutdown()
         jobs.events.close()

@@ -427,6 +427,62 @@ class Behavior(BaseModel):
     sampled_performance_index: float | None
 
 
+class HistogramBin(BaseModel):
+    bin_start: float
+    bin_end: float
+    count: int
+
+
+class WeightStats(BaseModel):
+    mean: float | None = None
+    std: float | None = None
+    min: float | None = None
+    max: float | None = None
+    median: float | None = None
+    p10: float | None = None
+    p90: float | None = None
+    floor_fraction: float | None = None
+    histogram: list[HistogramBin] = Field(default_factory=list)
+
+
+class LearningCurvePoint(BaseModel):
+    trial: int
+    slot: str
+    odour: str
+    us: str
+    mbon_spikes: float
+    mbon_all_spikes: float
+    kc_active_count: int
+    dan_spikes: float
+
+
+class PopulationGroupRate(BaseModel):
+    group: str
+    pre_plus_hz: float
+    post_plus_hz: float
+    pre_minus_hz: float
+    post_minus_hz: float
+
+
+class KcSparseness(BaseModel):
+    active_plus_count: int
+    active_minus_count: int
+    total_kc: int
+    treves_rolls_plus: float | None = None
+    treves_rolls_minus: float | None = None
+
+
+class PopulationStats(BaseModel):
+    groups: list[PopulationGroupRate] = Field(default_factory=list)
+    kc_sparseness: KcSparseness | None = None
+    mbon_discrimination: float | None = None
+
+
+class Prediction(BaseModel):
+    expected_shock: float | None = None
+    expected_reward: float | None = None
+
+
 class ExperimentResult(BaseModel):
     separation: Separation
     mbons: list[MbonSummary]
@@ -443,6 +499,10 @@ class ExperimentResult(BaseModel):
     readout_after_ms: float         # when the "after" readout presentations start
     odours: dict[str, str]           # slot -> odour name
     lesioned: list[int]             # silenced neuron indices
+    weight_stats: WeightStats | None = None
+    learning_curve: list[LearningCurvePoint] = Field(default_factory=list)
+    population_stats: PopulationStats | None = None
+    prediction: Prediction | None = None
 
 
 class Progress(BaseModel):

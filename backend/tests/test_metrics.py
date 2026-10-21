@@ -55,3 +55,13 @@ def test_metrics_cover_requests_events_and_queue(tmp_path):
         text = client.get("/metrics").text
         assert value(text, "fruit_fly_experiments", status="done") == 2
         assert value(text, "fruit_fly_oldest_queued_seconds") == 0
+        assert value(text, "fruit_fly_simulations_total", status="done") == 2
+        assert value(text, "fruit_fly_simulation_duration_seconds_count", status="done") == 2
+        assert value(text, "fruit_fly_queue_wait_duration_seconds_count") == 2
+        assert value(text, "fruit_fly_spikes_simulated_total") > 0
+        assert value(text, "fruit_fly_simulation_speedup_ratio_count") == 2
+        assert value(text, "fruit_fly_sweeps_total") == 0
+        assert value(text, "fruit_fly_storage_disk_total_bytes") > 0
+        assert value(text, "fruit_fly_storage_disk_available_bytes") > 0
+        assert value(text, "fruit_fly_sse_connections_active") == 0
+        assert value(text, "fruit_fly_recent_simulation_duration_seconds") > 0

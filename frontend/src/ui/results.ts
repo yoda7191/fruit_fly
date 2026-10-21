@@ -1,7 +1,166 @@
 // results.ts — the learning outcome of one experiment, in words and numbers.
 
-import type { ExperimentResult, Behavior, CompartmentChange, ExperimentDetail } from "../types";
+import type {
+  ExperimentResult,
+  Behavior,
+  CompartmentChange,
+  ExperimentDetail,
+  LearningCurvePoint,
+  WeightStats,
+  PopulationStats,
+  Prediction,
+} from "../types";
 import { el, formatNumber, formatPercent } from "./dom";
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function createSvg<K extends keyof SVGElementTagNameMap>(
+  tag: K,
+  attrs: Record<string, string | number>,
+  text?: string
+): SVGElementTagNameMap[K] {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, String(v));
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function learningCurveSection(lc: LearningCurvePoint[], plusSlot: string, minusSlot: string): HTMLElement[] {
+  if (!lc.length) return [];
+  const w = 320, h = 130;
+  const m = { top: 15, right: 15, bottom: 25, left: 35 };
+  const pw = w - m.left - m.right;
+  const ph = h - m.top - m.bottom;
+
+  const plusPoints = lc.filter((p) => p.slot === plusSlot);
+  const minusPoints = lc.filter((p) => p.slot === minusSlot);
+  const maxTrial = Math.max(1, ...lc.map((p) => p.trial));
+  const maxSpikes = Math.max(1, ...lc.map((p) => Math.max(p.mbon_spikes, p.mbon_all_spikes)));
+
+  const scaleX = (trial: number) => m.left + ((trial - 1) / Math.max(1, maxTrial - 1)) * pw;
+  const scaleY = (spikes: number) => m.top + ph - (spikes / maxSpikes) * ph;
+
+  const svg = createSvg("svg", { viewBox: `0 0 ${w} ${h}`, class: "sweep-chart" });
+  svg.appendChild(createSvg("line", { x1: m.left, y1: m.top + ph, x2: m.left + pw, y2: m.top + ph, class: "grid" }));
+  svg.appendChild(createSvg("line", { x1: m.left, y1: m.top, x2: m.left, y2: m.top + ph, class: "grid" }));
+
+  svg.appendChild(createSvg("text", { x: m.left - 4, y: m.top + 10, "text-anchor": "end", class: "tick" }, maxSpikes.toFixed(0)));
+  svg.appendChild(createSvg("text", { x: m.left - 4, y: m.top + ph, "text-anchor": "end", class: "tick" }, "0"));
+  svg.appendChild(createSvg("text", { x: m.left + pw / 2, y: h - 5, "text-anchor": "middle", class: "tick" }, "Training trials"));
+
+  if (plusPoints.length > 0) {
+    const dPlus = plusPoints.map((p) => `${scaleX(p.trial)},${scaleY(p.mbon_spikes)}`).join(" ");
+    svg.appendChild(createSvg("polyline", { points: dPlus, fill: "none", stroke: "var(--neg, #a78bfa)", "stroke-width": 2 }));
+    for (const p of plusPoints) {
+      svg.appendChild(createSvg("circle", { cx: scaleX(p.trial), cy: scaleY(p.mbon_spikes), r: 3.5, fill: "var(--neg, #a78bfa)" }));
+    }
+  }
+
+  if (minusPoints.length > 0) {
+    const dMinus = minusPoints.map((p) => `${scaleX(p.trial)},${scaleY(p.mbon_spikes)}`).join(" ");
+    svg.appendChild(createSvg("polyline", {
+      points: dMinus, fill: "none", stroke: "var(--accent, #60a5fa)", "stroke-width": 2, "stroke-dasharray": "4 3"
+    }));
+    for (const p of minusPoints) {
+      svg.appendChild(createSvg("circle", { cx: scaleX(p.trial), cy: scaleY(p.mbon_spikes), r: 3, fill: "var(--accent, #60a5fa)" }));
+    }
+  }
+
+  const legend = el("div", { class: "small muted", style: "display: flex; gap: 1rem; margin-top: 0.3rem;" }, [
+    el("span", {}, [el("span", { style: "color: var(--neg, #a78bfa); font-weight: bold;", text: "— " }), "CS+ (target MBONs)"]),
+    el("span", {}, [el("span", { style: "color: var(--accent, #60a5fa); font-weight: bold;", text: "- - " }), "CS\u2212"]),
+  ]);
+
+  return [
+    el("h3", { text: "Learning curve (target output neurons)" }),
+    el("div", {}, [svg]),
+    legend,
+  ];
+}
+
+function weightDistributionSection(ws: WeightStats): HTMLElement[] {
+  if (!ws.histogram?.length) return [];
+  const w = 320, h = 95;
+  const m = { top: 10, right: 10, bottom: 22, left: 30 };
+  const pw = w - m.left - m.right;
+  const ph = h - m.top - m.bottom;
+
+  const maxCount = Math.max(1, ...ws.histogram.map((b) => b.count));
+  const barW = Math.max(2, pw / ws.histogram.length - 2);
+
+  const svg = createSvg("svg", { viewBox: `0 0 ${w} ${h}`, class: "sweep-chart" });
+  svg.appendChild(createSvg("line", { x1: m.left, y1: m.top + ph, x2: m.left + pw, y2: m.top + ph, class: "grid" }));
+
+  ws.histogram.forEach((b, i) => {
+    const barH = (b.count / maxCount) * ph;
+    const x = m.left + i * (pw / ws.histogram.length) + 1;
+    const y = m.top + ph - barH;
+    svg.appendChild(createSvg("rect", {
+      x, y, width: barW, height: barH, fill: "var(--pos, #34d399)", rx: 1
+    }));
+  });
+
+  svg.appendChild(createSvg("text", { x: m.left, y: h - 4, class: "tick" }, "0.0"));
+  svg.appendChild(createSvg("text", { x: m.left + pw / 2, y: h - 4, "text-anchor": "middle", class: "tick" }, "w / w0 ratio"));
+  svg.appendChild(createSvg("text", { x: m.left + pw, y: h - 4, "text-anchor": "end", class: "tick" }, "1.0"));
+
+  const stats = [
+    `Mean: ${formatNumber(ws.mean)}`,
+    `Median: ${formatNumber(ws.median)}`,
+    ws.floor_fraction !== null ? `At floor: ${formatPercent(ws.floor_fraction)}` : null,
+  ].filter(Boolean).join(" \u00b7 ");
+
+  return [
+    el("h3", { text: "Synaptic weight change distribution" }),
+    el("div", {}, [svg]),
+    el("p", { class: "small muted", text: stats }),
+  ];
+}
+
+function populationSection(ps: PopulationStats): HTMLElement[] {
+  const elements: HTMLElement[] = [];
+
+  if (ps.groups && ps.groups.length > 0) {
+    elements.push(el("h3", { text: "Population firing rates (post-training)" }));
+    const rows = ps.groups.map((g) =>
+      row(`${g.group} (CS+ / CS\u2212)`, `${g.post_plus_hz.toFixed(1)} / ${g.post_minus_hz.toFixed(1)} Hz`)
+    );
+    elements.push(el("table", { class: "kv" }, rows));
+  }
+
+  if (ps.kc_sparseness) {
+    const ks = ps.kc_sparseness;
+    const pctPlus = ks.total_kc > 0 ? ((ks.active_plus_count / ks.total_kc) * 100).toFixed(1) : "0";
+    const pctMinus = ks.total_kc > 0 ? ((ks.active_minus_count / ks.total_kc) * 100).toFixed(1) : "0";
+    const sparsenessRows = [
+      row("Active Kenyon cells (CS+)", `${ks.active_plus_count} (${pctPlus}%)`),
+      row("Active Kenyon cells (CS\u2212)", `${ks.active_minus_count} (${pctMinus}%)`),
+      ks.treves_rolls_plus !== null ? row("Treves-Rolls sparseness", `${formatNumber(ks.treves_rolls_plus)} (lower = sparser)`) : null,
+      ps.mbon_discrimination !== null && ps.mbon_discrimination !== undefined
+        ? row("MBON odour discrimination", formatNumber(ps.mbon_discrimination))
+        : null,
+    ].filter((r): r is HTMLTableRowElement => r !== null);
+    elements.push(el("h3", { text: "Kenyon cell coding sparseness" }));
+    elements.push(el("table", { class: "kv" }, sparsenessRows));
+  }
+
+  return elements;
+}
+
+function predictionSection(pred: Prediction): HTMLElement[] {
+  const rows = [];
+  if (pred.expected_shock !== null) {
+    rows.push(row("Expected shock", formatNumber(pred.expected_shock)));
+  }
+  if (pred.expected_reward !== null) {
+    rows.push(row("Expected reward", formatNumber(pred.expected_reward)));
+  }
+  if (!rows.length) return [];
+  return [
+    el("h3", { text: "Learned US expectation (prediction error)" }),
+    el("table", { class: "kv" }, rows),
+  ];
+}
 
 export type Verdict = "specific" | "generalized" | "weak" | "none";
 
@@ -112,6 +271,14 @@ export function renderResults(root: HTMLElement, detail: ExperimentDetail): void
     ...behaviorSection(res.behavior, req.cs_plus, req.cs_minus, req.us),
   ];
 
+  if (res.learning_curve && res.learning_curve.length > 0) {
+    sections.push(...learningCurveSection(res.learning_curve, res.readout.plus, res.readout.minus));
+  }
+
+  if (res.weight_stats) {
+    sections.push(...weightDistributionSection(res.weight_stats));
+  }
+
   const sep = res.separation;
   sections.push(
     el("h3", { text: "Odour representations (before training)" }),
@@ -128,6 +295,10 @@ export function renderResults(root: HTMLElement, detail: ExperimentDetail): void
     ]),
   );
 
+  if (res.population_stats) {
+    sections.push(...populationSection(res.population_stats));
+  }
+
   const head = el("tr", {}, ["MBON", "US-DA", "CS+ pre", "CS+ post", "CS\u2212 pre", "CS\u2212 post"]
     .map((h) => el("th", { text: h })));
   const rows = res.mbons.map((m) =>
@@ -143,6 +314,11 @@ export function renderResults(root: HTMLElement, detail: ExperimentDetail): void
               text: "In the 3D view, output neurons turn from yellow to purple once training has ended, " +
                     "in proportion to how much their Kenyon cell inputs weakened." }),
   );
+
+  if (res.prediction) {
+    sections.push(...predictionSection(res.prediction));
+  }
+
   root.replaceChildren(...sections);
 }
 

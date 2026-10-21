@@ -259,6 +259,62 @@ export interface Behavior {
   sampled_performance_index: number | null;
 }
 
+export interface HistogramBin {
+  bin_start: number;
+  bin_end: number;
+  count: number;
+}
+
+export interface WeightStats {
+  mean: number | null;
+  std: number | null;
+  min: number | null;
+  max: number | null;
+  median: number | null;
+  p10: number | null;
+  p90: number | null;
+  floor_fraction: number | null;
+  histogram: HistogramBin[];
+}
+
+export interface LearningCurvePoint {
+  trial: number;
+  slot: string;
+  odour: string;
+  us: string;
+  mbon_spikes: number;
+  mbon_all_spikes: number;
+  kc_active_count: number;
+  dan_spikes: number;
+}
+
+export interface PopulationGroupRate {
+  group: string;
+  pre_plus_hz: number;
+  post_plus_hz: number;
+  pre_minus_hz: number;
+  post_minus_hz: number;
+}
+
+export interface KcSparseness {
+  active_plus_count: number;
+  active_minus_count: number;
+  total_kc: number;
+  treves_rolls_plus: number | null;
+  treves_rolls_minus: number | null;
+}
+
+export interface PopulationStats {
+  groups: PopulationGroupRate[];
+  kc_sparseness?: KcSparseness | null;
+  mbon_discrimination?: number | null;
+}
+
+export interface Prediction {
+  expected_shock: number | null;
+  expected_reward: number | null;
+}
+
 export interface ExperimentResult {
   separation: Separation;
   mbons: MbonSummary[];
@@ -275,6 +331,10 @@ export interface ExperimentResult {
   readout_after_ms: number;      // when the "after" readout presentations start
   odours: Record<string, string>; // slot -> odour name
   lesioned: number[];            // silenced neuron indices
+  weight_stats?: WeightStats | null;
+  learning_curve?: LearningCurvePoint[];
+  population_stats?: PopulationStats | null;
+  prediction?: Prediction | null;
 }
 
 export interface Progress {

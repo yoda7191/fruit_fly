@@ -35,6 +35,17 @@ def finite_or_none(x: float) -> float | None:
     return float(x) if x is not None and math.isfinite(x) else None
 
 
+def _treves_rolls(counts: np.ndarray) -> float | None:
+    if len(counts) == 0:
+        return None
+    c = np.asarray(counts, dtype=np.float64)
+    sum_c = np.sum(c)
+    sum_sq = np.sum(c ** 2)
+    if sum_sq == 0:
+        return 0.0
+    return float((sum_c ** 2) / (len(c) * sum_sq))
+
+
 def build_params(req: ConditioningRequest, defaults: dict | None = None) -> fruit_fly.Params:
     """fruit_fly defaults <- server defaults (FRUIT_FLY_PARAMS_FILE) <- the request's overrides."""
     p = fruit_fly.Params()
@@ -139,7 +150,100 @@ def run_experiment(store: ModelStore, req: ConditioningRequest,
             "weight_ratio": float(ratio[post == m].mean()),
         })
 
+    # ------------------------------------------------ expanded metrics
+    w_min = float(params.w_min_frac)
+    hist_counts, bin_edges = np.histogram(ratio, bins=10, range=(0.0, 1.0))
+    bins = [
+        {"bin_start": round(float(bin_edges[i]), 2),
+         "bin_end": round(float(bin_edges[i + 1]), 2),
+         "count": int(hist_counts[i])}
+        for i in range(len(hist_counts))
+    ]
+    weight_stats = {
+        "mean": finite_or_none(np.mean(ratio)),
+        "std": finite_or_none(np.std(ratio)),
+        "min": finite_or_none(np.min(ratio)),
+        "max": finite_or_none(np.max(ratio)),
+        "median": finite_or_none(np.median(ratio)),
+        "p10": finite_or_none(np.percentile(ratio, 10)),
+        "p90": finite_or_none(np.percentile(ratio, 90)),
+        "floor_fraction": finite_or_none(float(np.mean(ratio <= (w_min + 1e-4)))),
+        "histogram": bins,
+    }
+
+    grp = store.group.astype(str)
+    kc_idx = np.flatnonzero(grp == "KC")
+    mbon_idx = np.flatnonzero(grp == "MBON")
+    dan_idx = np.flatnonzero(np.char.startswith(grp, "DAN"))
+    target_mbon_idx = np.flatnonzero((grp == "MBON") & (np.asarray(target) > 0))
+    if len(target_mbon_idx) == 0:
+        target_mbon_idx = mbon_idx
+
     names = {slot: name for slot, (name, _) in odours.items()}
+
+    learning_curve = []
+    trial_counter: dict[str, int] = {}
+    for p in made:
+        if p.phase == "training":
+            slot = p.label
+            trial_counter[slot] = trial_counter.get(slot, 0) + 1
+            cnts = np.asarray(p.counts)
+            mbon_spikes = float(cnts[target_mbon_idx].mean()) if len(target_mbon_idx) else 0.0
+            mbon_all = float(cnts[mbon_idx].mean()) if len(mbon_idx) else 0.0
+            kc_active = int((cnts[kc_idx] > 0).sum()) if len(kc_idx) else 0
+            dan_spikes = float(cnts[dan_idx].mean()) if len(dan_idx) else 0.0
+            learning_curve.append({
+                "trial": trial_counter[slot],
+                "slot": slot,
+                "odour": names.get(slot, slot),
+                "us": US_NAME.get(p.us, "none"),
+                "mbon_spikes": round(mbon_spikes, 2),
+                "mbon_all_spikes": round(mbon_all, 2),
+                "kc_active_count": kc_active,
+                "dan_spikes": round(dan_spikes, 2),
+            })
+
+    pop_groups = []
+    for gname in ("ORN", "ALPN", "KC", "MBON", "DAN_PPL1", "DAN_PAM", "APL"):
+        g_idx = np.flatnonzero(grp == gname)
+        if len(g_idx) == 0:
+            continue
+        dur_pre_p = max(0.001, r.pre_plus.duration_ms / 1000.0)
+        dur_post_p = max(0.001, r.post_plus.duration_ms / 1000.0)
+        dur_pre_m = max(0.001, r.pre_minus.duration_ms / 1000.0)
+        dur_post_m = max(0.001, r.post_minus.duration_ms / 1000.0)
+        pop_groups.append({
+            "group": gname,
+            "pre_plus_hz": round(float(np.asarray(r.pre_plus.counts)[g_idx].mean() / dur_pre_p), 2),
+            "post_plus_hz": round(float(np.asarray(r.post_plus.counts)[g_idx].mean() / dur_post_p), 2),
+            "pre_minus_hz": round(float(np.asarray(r.pre_minus.counts)[g_idx].mean() / dur_pre_m), 2),
+            "post_minus_hz": round(float(np.asarray(r.post_minus.counts)[g_idx].mean() / dur_post_m), 2),
+        })
+
+    post_p_mbons = np.asarray(r.post_plus.counts)[mbon_idx].astype(float) if len(mbon_idx) else np.zeros(0)
+    post_m_mbons = np.asarray(r.post_minus.counts)[mbon_idx].astype(float) if len(mbon_idx) else np.zeros(0)
+    denom = post_p_mbons + post_m_mbons
+    active_mbons = denom > 0
+    mbon_discrim = float(np.mean(np.abs(post_m_mbons[active_mbons] - post_p_mbons[active_mbons]) / denom[active_mbons])) if np.any(active_mbons) else 0.0
+
+    kc_cnts_pre_p = np.asarray(r.pre_plus.counts)[kc_idx] if len(kc_idx) else np.zeros(0)
+    kc_cnts_pre_m = np.asarray(r.pre_minus.counts)[kc_idx] if len(kc_idx) else np.zeros(0)
+    population_stats = {
+        "groups": pop_groups,
+        "kc_sparseness": {
+            "active_plus_count": int((kc_cnts_pre_p > 0).sum()),
+            "active_minus_count": int((kc_cnts_pre_m > 0).sum()),
+            "total_kc": int(len(kc_idx)),
+            "treves_rolls_plus": finite_or_none(_treves_rolls(kc_cnts_pre_p)),
+            "treves_rolls_minus": finite_or_none(_treves_rolls(kc_cnts_pre_m)),
+        },
+        "mbon_discrimination": round(mbon_discrim, 4),
+    }
+
+    prediction = {
+        "expected_shock": finite_or_none(exp.simulator.expected_shock),
+        "expected_reward": finite_or_none(exp.simulator.expected_reward),
+    }
     def label(slot_key: str) -> str | None:              # "A+C" -> "octanol + benzaldehyde"
         parts = slot_key.split("+")
         return " + ".join(names[s] for s in parts) if all(s in names for s in parts) else None
@@ -190,6 +294,10 @@ def run_experiment(store: ModelStore, req: ConditioningRequest,
         "readout_after_ms": readout_after_ms,
         "odours": names,
         "lesioned": lesioned,
+        "weight_stats": weight_stats,
+        "learning_curve": learning_curve,
+        "population_stats": population_stats,
+        "prediction": prediction,
         "behavior": {
             "valid": behavior.valid,
             "valenced_mbons": behavior.valenced_mbons,

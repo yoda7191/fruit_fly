@@ -98,7 +98,9 @@ services:
       - s3data:/data
     restart: unless-stopped
 
-  # Optional: `docker compose --profile monitoring up` -> http://localhost:9090
+  # Optional: `docker compose --profile monitoring up`
+  # Prometheus: http://localhost:9090
+  # Grafana:    http://localhost:3000
   prometheus:
     image: prom/prometheus:v2.53.0
     profiles: ["monitoring"]
@@ -106,8 +108,28 @@ services:
       - "9090:9090"
     volumes:
       - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/alerts.yml:/etc/prometheus/alerts.yml:ro
     depends_on:
       api: { condition: service_started }
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    profiles: ["monitoring"]
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    depends_on:
+      - prometheus
     restart: unless-stopped
 
 volumes:
@@ -115,3 +137,4 @@ volumes:
   pgdata:
   redisdata:
   runs:
+  grafanadata:

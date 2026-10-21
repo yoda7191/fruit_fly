@@ -11,6 +11,10 @@ export const METRIC_LABELS: Record<string, string> = {
   kc_active_plus: "Kenyon cells active for CS+",
   kc_correlation: "Odour similarity at Kenyon cells",
   pn_correlation: "Odour similarity at projection neurons",
+  mean_weight_ratio: "Mean weight ratio (plastic synapses)",
+  mbon_discrimination: "MBON odour discrimination index",
+  learned_drive: "Learned approach drive",
+  weight_floor_frac: "Synapses saturated at weight floor",
 };
 
 const SVG = "http://www.w3.org/2000/svg";

@@ -23,11 +23,12 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import time
 import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import sessionmaker
@@ -38,6 +39,9 @@ from .logs import experiment_context
 from .runner import ProgressFn, RunOutput
 from .schemas import ConditioningRequest
 from .spikes import LocalSpikeStore, S3SpikeStore
+
+if TYPE_CHECKING:
+    from .metrics import Metrics
 
 log = logging.getLogger("fruit_fly.jobs")
 
@@ -142,7 +146,8 @@ class RedisQueue:
 
 class JobService:
     def __init__(self, sessions: sessionmaker, spikes: LocalSpikeStore | S3SpikeStore, *,
-                 max_pending: int, max_experiments: int, run: RunFn | None = None):
+                 max_pending: int, max_experiments: int, run: RunFn | None = None,
+                 metrics: Metrics | None = None):
         self.sessions = sessions
         self.spikes = spikes
         self.max_pending = max_pending
@@ -150,6 +155,7 @@ class JobService:
         self.run = run                      # None in an API process that doesn't execute jobs
         self.queue: JobQueue | None = None
         self.events: EventBus = NullBus()
+        self.metrics = metrics
 
     def _notify(self, experiment_id: str, sweep_id: str | None = None) -> None:
         self.events.publish(experiment_id, sweep_id)
@@ -359,39 +365,68 @@ class JobService:
             row = s.get(ExperimentRow, experiment_id)
             request = ConditioningRequest.model_validate(row.request)
             store_spikes, sweep_id, request_id = row.store_spikes, row.sweep_id, row.request_id
+            created_at = row.created_at
+            started_at = row.started_at or utcnow()
 
-        with experiment_context(experiment_id, request_id):
-            self._notify(experiment_id, sweep_id)
-            log.info("experiment started")
+        queue_wait = max(0.0, (started_at - created_at).total_seconds()) if created_at else 0.0
+        if self.metrics:
+            self.metrics.queue_wait.observe(queue_wait)
+            self.metrics.workers_busy.inc()
 
-            def report(done: int, total: int) -> None:
-                """Called by the simulator after each odour presentation: store
-                progress, and stop if cancellation was requested."""
-                with self.sessions() as s, s.begin():
-                    r = s.get(ExperimentRow, experiment_id)
-                    if r is None:
-                        raise Cancelled("deleted")
-                    r.progress_done, r.progress_total = done, total
-                    stop = r.cancel_requested
-                self._notify(experiment_id)
-                if stop:
-                    raise Cancelled("cancelled")
+        start_time = time.perf_counter()
+        try:
+            with experiment_context(experiment_id, request_id):
+                self._notify(experiment_id, sweep_id)
+                log.info("experiment started")
 
-            try:
-                output = self.run(request, report)
-                if store_spikes:
-                    self.spikes.save(experiment_id, output.spike_neurons, output.spike_times)
-            except Cancelled:
-                log.info("experiment cancelled while running")
-                self._finish(experiment_id, sweep_id, status="cancelled", error="cancelled while running")
-                return
-            except Exception as e:                   # report it; never crash the worker
-                log.exception("experiment failed")
-                self._finish(experiment_id, sweep_id, status="failed", error=f"{type(e).__name__}: {e}")
-                return
-            self._finish(experiment_id, sweep_id, status="done", result=output.result)
-            log.info("experiment finished")
-        self._prune()
+                def report(done: int, total: int) -> None:
+                    """Called by the simulator after each odour presentation: store
+                    progress, and stop if cancellation was requested."""
+                    with self.sessions() as s, s.begin():
+                        r = s.get(ExperimentRow, experiment_id)
+                        if r is None:
+                            raise Cancelled("deleted")
+                        r.progress_done, r.progress_total = done, total
+                        stop = r.cancel_requested
+                    self._notify(experiment_id)
+                    if stop:
+                        raise Cancelled("cancelled")
+
+                try:
+                    output = self.run(request, report)
+                    if store_spikes:
+                        self.spikes.save(experiment_id, output.spike_neurons, output.spike_times)
+                except Cancelled:
+                    log.info("experiment cancelled while running")
+                    if self.metrics:
+                        self.metrics.simulations_total.labels(status="cancelled").inc()
+                    self._finish(experiment_id, sweep_id, status="cancelled", error="cancelled while running")
+                    return
+                except Exception as e:                   # report it; never crash the worker
+                    log.exception("experiment failed")
+                    if self.metrics:
+                        self.metrics.simulations_total.labels(status="failed").inc()
+                    self._finish(experiment_id, sweep_id, status="failed", error=f"{type(e).__name__}: {e}")
+                    return
+
+                duration = time.perf_counter() - start_time
+                if self.metrics:
+                    self.metrics.simulations_total.labels(status="done").inc()
+                    self.metrics.simulation_duration.labels(status="done").observe(duration)
+                    if output.result:
+                        n_spikes = output.result.get("n_spikes", 0)
+                        if n_spikes:
+                            self.metrics.spikes_simulated.inc(n_spikes)
+                        sim_ms = output.result.get("duration_ms", 0.0)
+                        if sim_ms and duration > 0:
+                            self.metrics.simulation_speedup.observe((sim_ms / 1000.0) / duration)
+
+                self._finish(experiment_id, sweep_id, status="done", result=output.result)
+                log.info("experiment finished")
+            self._prune()
+        finally:
+            if self.metrics:
+                self.metrics.workers_busy.dec()
 
     def _finish(self, experiment_id: str, sweep_id: str | None, *, status: str,
                 result: dict | None = None, error: str | None = None) -> None:

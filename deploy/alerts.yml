@@ -1,0 +1,38 @@
+groups:
+  - name: fruit_fly_alerts
+    rules:
+      - alert: SimulationQueueBackedUp
+        expr: fruit_fly_oldest_queued_seconds > 120
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Simulation queue backed up"
+          description: "Oldest queued experiment has been waiting for {{ $value }}s (> 2m)."
+
+      - alert: LowStorageSpace
+        expr: fruit_fly_storage_disk_available_bytes < 1073741824
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Host disk space critically low"
+          description: "Free disk space on simulation storage is below 1 GB (current: {{ $value | humanize1024 }}B)."
+
+      - alert: HighHttpErrorRate
+        expr: (sum(rate(fruit_fly_http_requests_total{status=~"5.."}[5m])) / clamp_min(sum(rate(fruit_fly_http_requests_total[5m])), 0.001)) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Elevated 5xx HTTP errors"
+          description: "More than 5% of HTTP requests returned 5xx errors over the last 5 minutes."
+
+      - alert: SimulationFailureSpike
+        expr: increase(fruit_fly_simulations_total{status="failed"}[5m]) > 2
+        labels:
+          severity: warning
+        annotations:
+          summary: "Multiple simulation failures"
+          description: "{{ $value }} simulations failed in the past 5 minutes."
+

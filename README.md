@@ -24,7 +24,7 @@ The real FlyWire circuit is available at
 [fruit-fly.duckdns.org](https://fruit-fly.duckdns.org).
 
 The demo is shared: users access the same FlyWire circuit and server, while
-each browser maintains its own viewer state. 
+each browser maintains its own viewer state.
 
 ## What this project contains
 
@@ -121,6 +121,7 @@ docker compose up --build
 # web app and API: http://localhost:8000
 docker compose --profile monitoring up
 # Prometheus: http://localhost:9090
+# Grafana:    http://localhost:3000 (pre-provisioned Fruit Fly Overview dashboard)
 ```
 
 For a local Python/frontend workflow:
